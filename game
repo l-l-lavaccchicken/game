@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Dead: SNES Zombie Shooter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use a retro-style font -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Global retro/pixelated style */
+        body {
+            font-family: 'Press Start 2P', monospace;
+            background-color: #1e1e2e; /* Dark, retro background */
+            /* Full viewport centering for immersive feel */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+
+        /* Essential for true pixel scaling in modern browsers */
+        canvas {
+            image-rendering: optimizeSpeed; 
+            image-rendering: -moz-crisp-edges; 
+            image-rendering: -webkit-optimize-contrast; 
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            border: 4px solid #f0f0f0; /* Light border for contrast */
+            box-shadow: 0 0 0 8px #444455; /* Chunky outer shadow/bezel */
+            background-color: #334; /* Dark game background */
+            /* Responsive size adjustment */
+            width: 100%; 
+            max-width: 800px; /* Cap the max width to prevent excessive scaling */
+            height: auto;
+            aspect-ratio: 512 / 400; /* Maintain the fixed aspect ratio */
+        }
+
+        .game-ui-text {
+            color: #f0f0f0;
+            text-shadow: 2px 2px #000;
+        }
+
+        /* Modal styling */
+        .modal {
+            background: rgba(0, 0, 0, 0.85);
+        }
+
+        .modal-content {
+            background: #222233;
+            border: 4px solid #ffcc00;
+            box-shadow: 0 0 10px #ffcc00;
+        }
+
+        /* Mobile Controls Styling (Touch) */
+        .mobile-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: none;
+            padding: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-controls {
+                display: flex;
+                justify-content: space-between;
+                padding: 10px 20px;
+            }
+            .mobile-controls button {
+                /* A simple style for mobile controls, assuming the snes-button style isn't necessary here */
+                width: 60px;
+                height: 60px;
+                background-color: #666;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 1.2rem;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                box-shadow: 0 3px 0 #444;
+            }
+            .mobile-controls button:active {
+                 box-shadow: 0 0 0 #444;
+                 transform: translateY(3px);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Display Bar -->
+    <div id="uiContainer" class="flex justify-between w-full max-w-[800px] p-2 text-xs sm:text-sm game-ui-text">
+        <span id="scoreDisplay">SCORE: 00000</span>
+        <span id="healthDisplay">HEALTH: 100</span>
+    </div>
+
+    <canvas id="gameCanvas" width="512" height="400"></canvas>
+
+    <!-- Game Over Modal (Used for auto-restart message) -->
+    <div id="gameOverModal" class="modal fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h2 class="text-xl sm:text-2xl mb-4 text-red-500">GAME OVER!</h2>
+            <p class="text-lg mb-4">Final Score: <span id="finalScore">0</span></p>
+            <p class="text-sm">RESTARTING IN 3 SECONDS...</p>
+        </div>
+    </div>
+
+    <!-- Mobile Controls (Hidden on desktop) -->
+    <div class="mobile-controls">
+        <button id="moveLeft">◀</button>
+        <button id="moveUp">▲</button>
+        <button id="moveDown">▼</button>
+        <button id="moveRight">▶</button>
+    </div>
+
+
+    <script>
+        // Wrap the entire game logic in an IIFE to isolate scope and prevent global conflicts.
+        (function() {
+            // --- Game Constants and Setup ---
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width;
+            const H = canvas.height;
+
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            const healthDisplay = document.getElementById('healthDisplay');
+            const gameOverModal = document.getElementById('gameOverModal');
+            const finalScoreDisplay = document.getElementById('finalScore');
+            
+            let isGameOver = true;
+            let score = 0;
+            let lastUpdateTime = 0;
+            let animationFrameId;
+
+            // Damage feedback constants
+            let hitFlashTimer = 0; 
+            const HIT_FLASH_DURATION = 15; 
+            const MUZZLE_FLASH_DURATION = 50; 
+
+            // --- Zombie Type Configurations ---
+            const ZOMBIE_TYPES = {
+                NORMAL: {
+                    health: 3,
+                    size: 12,
+                    speedBase: 0.8,
+                    score: 100,
+                    color: '#00cc00', // Green
+                    headColor: '#ff0000'
+                },
+                TANK: {
+                    health: 10,
+                    size: 20, // Larger size
+                    speedBase: 0.5, // Slower speed
+                    score: 500,
+                    color: '#8b0000', // Dark Red
+                    headColor: '#ffcc00'
+                }
+            };
+
+            // --- Game State Objects ---
+            let player = {
+                x: W / 2,
+                y: H / 2,
+                size: 16, // Base size for player
+                speed: 4,
+                health: 100,
+                maxHealth: 100,
+                color: '#00ffff', // Cyan shirt
+                pantsColor: '#4b4b4b', // Dark gray pants
+                facingX: 1, 
+                facingY: 0
+            };
+
+            let bullets = [];
+            let zombies = [];
+            let keys = {};
+            let scorePopups = []; 
+            
+            // Increased fire rate to reflect shotgun reload time
+            let mouse = { x: 0, y: 0, clicked: false, canShoot: true, fireRate: 350, lastShotTime: 0 }; 
+            let zombieSpawnTimer = 0;
+            const ZOMBIE_SPAWN_INTERVAL = 120; // Frames
+
+            // --- Helper Functions (SNES Pixel Art Rendering) ---
+
+            // Draw a simple, blocky rectangle
+            function drawBlock(x, y, w, h, color) {
+                ctx.fillStyle = color;
+                ctx.fillRect(Math.round(x), Math.round(y), w, h);
+            }
+
+            // Draw Player with simple pixel details (Now Humanoid and Bloodied)
+            function drawPlayer() {
+                const s = player.size; // Base size (16)
+                const x = player.x;
+                const y = player.y;
+                const bodyColor = player.color; // Cyan shirt
+                const pantsColor = player.pantsColor; 
+                const skinColor = '#ffdbac'; // Simple skin tone
+
+                // Calculate dimensions based on s
+                const headSize = Math.max(4, Math.round(s * 0.4)); 
+                const torsoWidth = Math.max(8, Math.round(s * 0.8)); 
+                const torsoHeight = Math.round(s * 0.9); 
+                const legWidth = Math.max(3, Math.round(s * 0.35));
+                const legHeight = Math.round(s * 0.5);
+
+                // Positioning: y starts from center of mass, offset upwards to find the top of the head
+                const totalHeight = headSize + torsoHeight + legHeight;
+                let currentY = y - totalHeight / 2;
+                
+                // 1. Head (Centered)
+                drawBlock(x - headSize / 2, currentY, headSize, headSize, skinColor);
+                currentY += headSize;
+
+                // 2. Torso (Centered - The "Blood Covered Shirt")
+                drawBlock(x - torsoWidth / 2, currentY, torsoWidth, torsoHeight, bodyColor);
+                
+                // Add blood splatter pixels on the torso
+                const bloodColor = '#cc0000';
+                drawBlock(x - torsoWidth / 2 + 1, currentY + 1, 2, 2, bloodColor);
+                drawBlock(x + torsoWidth / 2 - 3, currentY + 3, 2, 2, bloodColor);
+                drawBlock(x - 1, currentY + torsoHeight - 3, 3, 1, bloodColor);
+
+
+                currentY += torsoHeight;
+                
+                // 3. Legs (Two side-by-side blocks)
+                const legGap = torsoWidth - (legWidth * 2);
+                const gapHalf = Math.max(1, Math.round(legGap / 2));
+                
+                // Left Leg
+                drawBlock(x - legWidth - gapHalf, currentY, legWidth, legHeight, pantsColor);
+                
+                // Right Leg
+                drawBlock(x + gapHalf, currentY, legWidth, legHeight, pantsColor);
+                
+                // 4. Shotgun (pointing towards mouse/touch location)
+                const dx = mouse.x - x;
+                const dy = mouse.y - y;
+                const angle = Math.atan2(dy, dx);
+
+                // Barrel dimensions for shotgun look
+                const barrelLength = 12; // Shorter and thick
+                const barrelThickness = 5;
+                const handleLength = 4;
+                const handleThickness = 3;
+
+                // Position the gun slightly away from the torso center
+                const armLength = s / 2 + 1;
+                const gunPivotX = x + Math.cos(angle) * armLength;
+                const gunPivotY = y + Math.sin(angle) * armLength;
+
+                ctx.save();
+                ctx.translate(gunPivotX, gunPivotY);
+                ctx.rotate(angle);
+
+                // Barrel (Gray)
+                ctx.fillStyle = '#666666';
+                ctx.fillRect(0, -barrelThickness / 2, barrelLength, barrelThickness);
+
+                // Handle/Stock (Darker Gray)
+                ctx.fillStyle = '#444444';
+                ctx.fillRect(-handleLength, -handleThickness / 2, handleLength, handleThickness);
+                
+                ctx.restore();
+
+                // --- Player Health Bar (Drawn above the head) ---
+                const barWidth = 24;
+                const barHeight = 4;
+                const barX = x - barWidth / 2;
+                const barY = y - totalHeight / 2 - 6; // Positioned above the whole sprite
+                const healthRatio = player.health / player.maxHealth;
+                const filledWidth = barWidth * healthRatio;
+
+                // Background (Black outline)
+                drawBlock(barX - 1, barY - 1, barWidth + 2, barHeight + 2, '#000000'); 
+                // Empty bar area
+                drawBlock(barX, barY, barWidth, barHeight, '#444444');
+
+                // Filled health (Green/Yellow/Red)
+                if (filledWidth > 0) {
+                    let healthColor = '#00ff00';
+                    if (healthRatio < 0.5) healthColor = '#ffcc00';
+                    if (healthRatio < 0.25) healthColor = '#ff0000';
+                    drawBlock(barX, barY, filledWidth, barHeight, healthColor);
+                }
+            }
+
+            // Draw Zombie with simple pixel details (Now Humanoid with Arms and Bigger Head)
+            function drawZombie(zombie) {
+                const s = zombie.size; // Base size (12 for Normal, 20 for Tank)
+                const x = zombie.x;
+                const y = zombie.y;
+                const headColor = zombie.type.headColor;
+                const bodyColor = zombie.health > 1 ? zombie.type.color : '#cc0000'; // Critical color when low health
+                const skinColor = bodyColor; // Zombies have the same color for body and skin
+
+                // Calculate dimensions based on s
+                // Increased head size multiplier to 0.5 for a better proportion
+                const headSize = Math.max(6, Math.round(s * 0.5)); 
+                const torsoWidth = Math.max(8, Math.round(s * 0.7)); 
+                const torsoHeight = Math.round(s * 0.8); 
+                const legWidth = Math.max(3, Math.round(s * 0.3));
+                const legHeight = Math.round(s * 0.5);
+                const armWidth = Math.max(2, Math.round(s * 0.15));
+                const armHeight = torsoHeight + 2; // Arms slightly longer than torso
+
+                // Positioning: y starts from center of mass, offset upwards to find the top of the head
+                const totalHeight = headSize + torsoHeight + legHeight;
+                let currentY = y - totalHeight / 2;
+                
+                // 1. Head (Centered)
+                drawBlock(x - headSize / 2, currentY, headSize, headSize, headColor);
+                currentY += headSize;
+
+                // 2. Torso (Centered)
+                const torsoY = currentY;
+                drawBlock(x - torsoWidth / 2, torsoY, torsoWidth, torsoHeight, bodyColor);
+                
+                // 3. Arms (Dangling/Reaching, same color as body)
+                // Left Arm
+                drawBlock(x - torsoWidth / 2 - armWidth, torsoY, armWidth, armHeight, bodyColor);
+                // Right Arm
+                drawBlock(x + torsoWidth / 2, torsoY, armWidth, armHeight, bodyColor);
+
+                currentY += torsoHeight;
+                
+                // 4. Legs (Two side-by-side blocks)
+                // Calculate the gap between legs to make the total width equal to the torso width
+                const legGap = torsoWidth - (legWidth * 2);
+                const gapHalf = Math.max(1, Math.round(legGap / 2));
+                
+                // Left Leg
+                drawBlock(x - legWidth - gapHalf, currentY, legWidth, legHeight, bodyColor);
+                
+                // Right Leg
+                drawBlock(x + gapHalf, currentY, legWidth, legHeight, bodyColor);
+                
+                // --- Simple Eyes on the head ---
+                const eyeSize = 1;
+                const eyeOffset = headSize / 4;
+                const eyeY = y - totalHeight/2 + headSize/3;
+                drawBlock(x - eyeOffset - eyeSize/2, eyeY, eyeSize, eyeSize, '#000000'); // Left Eye
+                drawBlock(x + eyeOffset - eyeSize/2, eyeY, eyeSize, eyeSize, '#000000'); // Right Eye
+            }
+
+            // --- Core Game Logic ---
+
+            function updateUI() {
+                scoreDisplay.textContent = `SCORE: ${String(score).padStart(5, '0')}`;
+                // Ensure health doesn't show negative numbers
+                healthDisplay.textContent = `HEALTH: ${Math.max(0, player.health)}`; 
+            }
+
+            function spawnZombie() {
+                // Randomly select zombie type: 80% Normal, 20% Tank
+                const typeKey = Math.random() < 0.2 ? 'TANK' : 'NORMAL';
+                const type = ZOMBIE_TYPES[typeKey];
+                
+                const size = type.size;
+                // Speed scales with score, using the type's base speed (less aggressive scaling now)
+                const speed = type.speedBase + score / 10000; 
+                const health = type.health;
+                let x, y;
+
+                // Spawn off-screen (top, bottom, left, or right)
+                const side = Math.floor(Math.random() * 4);
+                switch (side) {
+                    case 0: // Top
+                        x = Math.random() * W;
+                        y = -size;
+                        break;
+                    case 1: // Bottom
+                        x = Math.random() * W;
+                        y = H + size;
+                        break;
+                    case 2: // Left
+                        x = -size;
+                        y = Math.random() * H;
+                        break;
+                    case 3: // Right
+                        x = W + size;
+                        y = Math.random() * H;
+                        break;
+                }
+
+                zombies.push({ 
+                    x, 
+                    y, 
+                    size, 
+                    speed, 
+                    health, 
+                    type: type // Store the entire type object
+                });
+            }
+
+            function handleInput() {
+                if (isGameOver) return;
+
+                // Movement keys (WASD or Arrows). Keys are checked for both cases due to event listeners
+                if (keys['w'] || keys['ArrowUp'] || keys['arrowup']) player.y -= player.speed;
+                if (keys['s'] || keys['ArrowDown'] || keys['arrowdown']) player.y += player.speed;
+                if (keys['a'] || keys['ArrowLeft'] || keys['arrowleft']) player.x -= player.speed;
+                if (keys['d'] || keys['ArrowRight'] || keys['arrowright']) player.x += player.speed;
+
+
+                // Keep player within bounds
+                player.x = Math.max(player.size / 2, Math.min(W - player.size / 2, player.x));
+                player.y = Math.max(player.size / 2, Math.min(H - player.size / 2, player.y));
+
+                // Shooting
+                const currentTime = Date.now();
+                if (mouse.clicked && mouse.canShoot) {
+                    if (currentTime - mouse.lastShotTime > mouse.fireRate) {
+                        shootBullet();
+                        mouse.lastShotTime = currentTime;
+                    }
+                }
+            }
+
+            function shootBullet() {
+                const dx = mouse.x - player.x;
+                const dy = mouse.y - player.y;
+                const angle = Math.atan2(dy, dx);
+                const speed = 10;
+                
+                // Muzzle flash timer reset
+                mouse.lastShotTime = Date.now();
+
+                bullets.push({
+                    x: player.x,
+                    y: player.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: 3,
+                    color: '#ffff00'
+                });
+            }
+
+            function updateGame(deltaTime) {
+                // Update hit flash timer
+                if (hitFlashTimer > 0) {
+                    hitFlashTimer--;
+                }
+
+                // Update score popups (float upwards)
+                scorePopups = scorePopups.filter(popup => {
+                    popup.y += popup.vy; // Moves up
+                    popup.life--;
+                    return popup.life > 0;
+                });
+                
+                // 2. Update Bullets
+                bullets = bullets.filter(bullet => {
+                    bullet.x += bullet.vx;
+                    bullet.y += bullet.vy;
+                    // Keep bullet inside game boundaries
+                    return bullet.x > -10 && bullet.x < W + 10 && bullet.y > -10 && bullet.y < H + 10;
+                });
+
+                // 3. Update Zombies
+                zombies.forEach(zombie => {
+                    // Move towards player
+                    const dx = player.x - zombie.x;
+                    const dy = player.y - zombie.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    zombie.x += (dx / dist) * zombie.speed;
+                    zombie.y += (dy / dist) * zombie.speed;
+
+                    // Collision with player
+                    // Collision is approximated using the original 'size' property
+                    if (dist < player.size / 2 + zombie.size / 2) {
+                        if (player.health > 0) {
+                            player.health -= 1; // Continuous damage
+                            hitFlashTimer = HIT_FLASH_DURATION; // Trigger screen flash
+                        }
+                        // Simple knockback effect for player (optional)
+                        player.x -= (dx / dist) * 10;
+                        player.y -= (dy / dist) * 10;
+                    }
+                });
+
+                // 4. Collision Detection (Bullet vs Zombie)
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const bullet = bullets[i];
+                    let hit = false;
+                    for (let j = zombies.length - 1; j >= 0; j--) {
+                        const zombie = zombies[j];
+                        const dx = bullet.x - zombie.x;
+                        const dy = bullet.y - zombie.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        // Use the size property for collision, it works well enough
+                        if (dist < zombie.size / 2 + bullet.radius) {
+                            // Hit detected!
+                            zombie.health -= 1;
+                            hit = true;
+                            if (zombie.health <= 0) {
+                                // Add score popup, using the score defined by the zombie's type
+                                scorePopups.push({ 
+                                    text: `+${zombie.type.score}`, 
+                                    x: zombie.x, 
+                                    y: zombie.y, 
+                                    life: 60, // 1 second duration
+                                    vy: -0.5 // float up speed
+                                });
+                                zombies.splice(j, 1);
+                                score += zombie.type.score; // Add the type-specific score
+                            }
+                            break; // Bullet can only hit one zombie
+                        }
+                    }
+                    if (hit) {
+                        bullets.splice(i, 1);
+                    }
+                }
+
+                // 5. Spawning
+                zombieSpawnTimer++;
+                if (zombieSpawnTimer >= ZOMBIE_SPAWN_INTERVAL) {
+                    spawnZombie();
+                    zombieSpawnTimer = 0;
+                }
+
+                // 6. Check Game Over
+                if (player.health <= 0) {
+                    endGame();
+                }
+            }
+
+            function render() {
+                // Clear screen (Dark Street Background)
+                ctx.fillStyle = '#334';
+                ctx.fillRect(0, 0, W, H);
+
+                // --- DAMAGE FLASH EFFECT (Drawn over background but under entities) ---
+                if (hitFlashTimer > 0) {
+                    // Flash effect - slight red transparency over the whole screen
+                    ctx.fillStyle = `rgba(255, 0, 0, ${hitFlashTimer / HIT_FLASH_DURATION * 0.3})`;
+                    ctx.fillRect(0, 0, W, H);
+                }
+
+                // Draw Bullets
+                bullets.forEach(bullet => {
+                    drawBlock(bullet.x - bullet.radius, bullet.y - bullet.radius, bullet.radius * 2, bullet.radius * 2, bullet.color);
+                });
+
+                // Draw Zombies
+                zombies.forEach(drawZombie);
+
+                // Draw Player
+                drawPlayer();
+                
+                // --- MUZZLE FLASH EFFECT ---
+                const currentTime = Date.now();
+                if (currentTime - mouse.lastShotTime < MUZZLE_FLASH_DURATION) {
+                    const dx = mouse.x - player.x;
+                    const dy = mouse.y - player.y;
+                    const angle = Math.atan2(dy, dx);
+                    
+                    // Increased flash distance to clear the shotgun barrel length
+                    const flashDistance = player.size / 2 + 14; 
+
+                    const flashX = player.x + Math.cos(angle) * flashDistance;
+                    const flashY = player.y + Math.sin(angle) * flashDistance;
+
+                    // Draw small yellow/orange block at the barrel
+                    drawBlock(flashX - 4, flashY - 4, 8, 8, '#ffcc00');
+                    drawBlock(flashX - 2, flashY - 2, 4, 4, '#ffffff'); // Center bright spot
+                }
+
+                // --- SCORE POPUPS ---
+                scorePopups.forEach(popup => {
+                    ctx.font = '8px "Press Start 2P"';
+                    ctx.fillStyle = `rgba(255, 255, 0, ${popup.life / 60})`; // Fade out
+                    ctx.fillText(popup.text, popup.x - ctx.measureText(popup.text).width / 2, popup.y);
+                });
+
+                // Update UI text
+                updateUI();
+            }
+
+            function gameLoop(timestamp) {
+                if (isGameOver) return;
+
+                const deltaTime = (timestamp - lastUpdateTime) / 1000;
+                lastUpdateTime = timestamp;
+
+                handleInput();
+                updateGame(deltaTime);
+                render();
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            // --- Event Handlers ---
+
+            function handleMouseMove(e) {
+                const rect = canvas.getBoundingClientRect();
+                // Calculate mouse position relative to canvas
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                mouse.x = (e.clientX - rect.left) * scaleX;
+                mouse.y = (e.clientY - rect.top) * scaleY;
+            }
+
+            function handleMouseDown(e) {
+                // Only left click counts as shoot
+                if (e.button === 0) {
+                    mouse.clicked = true;
+                }
+            }
+
+            function handleMouseUp(e) {
+                if (e.button === 0) {
+                    mouse.clicked = false;
+                }
+            }
+
+            function handleTouchMove(e) {
+                e.preventDefault(); // Prevent scrolling
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    handleMouseMove(touch);
+                }
+            }
+
+            function handleTouchStart(e) {
+                e.preventDefault();
+                mouse.clicked = true;
+                // Also update mouse position for immediate shot direction
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    handleMouseMove(touch);
+                }
+            }
+
+            function handleTouchEnd(e) {
+                mouse.clicked = false;
+            }
+
+            document.addEventListener('keydown', (e) => {
+                // Store both original and lowercase key to ensure broadest compatibility
+                keys[e.key] = true;
+                keys[e.key.toLowerCase()] = true;
+                // Prevent default arrow key scrolling
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                keys[e.key] = false;
+                keys[e.key.toLowerCase()] = false;
+            });
+
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            // Touch events for mobile shooting
+            canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+            canvas.addEventListener('touchend', handleTouchEnd);
+
+
+            // --- Mobile Button Event Listeners ---
+            function setupMobileControls() {
+                const controls = [
+                    // Ensure the key strings match those checked in handleInput
+                    { id: 'moveUp', keys: ['w', 'ArrowUp'] }, 
+                    { id: 'moveDown', keys: ['s', 'ArrowDown'] },
+                    { id: 'moveLeft', keys: ['a', 'ArrowLeft'] },
+                    { id: 'moveRight', keys: ['d', 'ArrowRight'] }
+                ];
+
+                controls.forEach(control => {
+                    const btn = document.getElementById(control.id);
+                    if (btn) {
+                        btn.addEventListener('touchstart', (e) => {
+                            e.preventDefault();
+                            control.keys.forEach(key => {
+                                keys[key] = true;
+                                keys[key.toLowerCase()] = true; // Set lowercase as well
+                            });
+                        }, { passive: false });
+
+                        btn.addEventListener('touchend', (e) => {
+                            e.preventDefault();
+                            control.keys.forEach(key => {
+                                keys[key] = false;
+                                keys[key.toLowerCase()] = false;
+                            });
+                        });
+                    }
+                });
+            }
+            setupMobileControls();
+
+            // --- Game Flow Control ---
+
+            function initGame() {
+                // Reset state
+                player.x = W / 2;
+                player.y = H / 2;
+                player.health = player.maxHealth;
+                score = 0;
+                bullets = [];
+                zombies = [];
+                keys = {};
+                scorePopups = []; // Reset popups
+                hitFlashTimer = 0; // Reset flash
+                zombieSpawnTimer = 0;
+                isGameOver = false;
+
+                gameOverModal.classList.add('hidden');
+                gameOverModal.classList.remove('flex');
+
+                // Start loop
+                lastUpdateTime = performance.now();
+                // Only request the animation frame if it's not already running
+                if (!animationFrameId) {
+                    animationFrameId = requestAnimationFrame(gameLoop);
+                }
+            }
+
+            function endGame() {
+                isGameOver = true;
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null; // Clear ID after stopping
+
+                finalScoreDisplay.textContent = String(score).padStart(5, '0');
+                gameOverModal.classList.remove('hidden');
+                gameOverModal.classList.add('flex');
+
+                // Auto-restart after 3 seconds
+                setTimeout(() => {
+                    initGame();
+                }, 3000); 
+            }
+
+            // --- Initial Start ---
+            window.onload = function() {
+                initGame();
+            };
+        })(); // End of IIFE
+
+    </script>
+</body>
+</html>
