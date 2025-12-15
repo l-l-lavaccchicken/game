@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Dead: Co-op Zombie Shooter (Wave System)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use a retro-style font -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Global retro/pixelated style */
+        body {
+            font-family: 'Press Start 2P', monospace;
+            background-color: #1e1e2e; /* Dark, retro background */
+            /* Full viewport centering for immersive feel */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+
+        /* Essential for true pixel scaling in modern browsers */
+        canvas {
+            image-rendering: optimizeSpeed; 
+            image-rendering: -moz-crisp-edges; 
+            image-rendering: -webkit-optimize-contrast; 
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+            border: 4px solid #f0f0f0; /* Light border for contrast */
+            box-shadow: 0 0 0 8px #444455; /* Chunky outer shadow/bezel */
+            background-color: #334; /* Dark game background */
+            /* Responsive size adjustment */
+            width: 100%; 
+            max-width: 800px; /* Cap the max width to prevent excessive scaling */
+            height: auto;
+            aspect-ratio: 512 / 400; /* Maintain the fixed aspect ratio */
+        }
+
+        .game-ui-text {
+            color: #f0f0f0;
+            text-shadow: 2px 2px #000;
+        }
+
+        /* Modal styling */
+        .modal {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        .modal-content {
+            background: #222233;
+            border: 4px solid #ffcc00;
+            box-shadow: 0 0 10px #ffcc00;
+        }
+        
+        .snes-button {
+            padding: 12px 20px;
+            font-size: 0.75rem; /* Small font for pixel style */
+            text-shadow: 1px 1px #000;
+            color: #f0f0f0;
+            background-color: #444455;
+            border: 3px solid #666677;
+            border-bottom-width: 6px;
+            transition: all 0.1s ease;
+            box-shadow: 0 4px #222233;
+            text-transform: uppercase;
+        }
+
+        .snes-button:hover {
+            background-color: #555566;
+        }
+
+        .snes-button:active {
+            border-bottom-width: 3px;
+            transform: translateY(3px);
+            box-shadow: 0 1px #222233;
+        }
+
+        .player-cyan { color: #00ffff; }
+        .player-magenta { color: #ff00ff; }
+
+        /* Tic-Tac-Toe specific styling for the board */
+        .ttt-cell {
+            border: 2px solid #ffcc00;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Display Bar -->
+    <div id="uiContainer" class="flex flex-col w-full max-w-[800px] p-2 text-xs sm:text-sm game-ui-text">
+        <div class="flex justify-between">
+            <span id="score1Display" class="player-cyan">P1 SCORE: 00000</span>
+            <span id="waveDisplay" class="text-yellow-400">WAVE 1 / ZOMBIES: 0</span>
+            <span id="health1Display" class="player-cyan">P1 HEALTH: 100</span>
+        </div>
+        <div id="p2UiGroup" class="flex justify-between mt-1 hidden">
+            <span id="score2Display" class="player-magenta">P2 SCORE: N/A</span>
+            <span id="spacer"></span>
+            <span id="health2Display" class="player-magenta">P2 HEALTH: N/A</span>
+        </div>
+    </div>
+    
+    <div id="weaponDisplay" class="w-full max-w-[800px] p-2 text-xs sm:text-sm game-ui-text text-center">
+        WEAPON: Shotgun
+    </div>
+
+
+    <canvas id="gameCanvas" width="512" height="400"></canvas>
+
+    <!-- 1. Player Count Selection Modal -->
+    <div id="playerCountModal" class="modal fixed inset-0 z-50 flex items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h1 class="text-xl sm:text-2xl mb-6 text-cyan-400">PIXEL DEAD</h1>
+            <h2 class="text-lg sm:text-xl mb-6 text-white">SELECT PLAYERS</h2>
+            <div class="flex flex-col space-y-4">
+                <button id="select1Player" class="snes-button bg-blue-600 border-blue-700 hover:bg-blue-700 active:bg-blue-800">
+                    1 PLAYER (Arrows/Mouse)
+                </button>
+                <button id="select2Players" class="snes-button bg-purple-600 border-purple-700 hover:bg-purple-700 active:bg-purple-800">
+                    2 PLAYERS (P1: Arrows+Mouse | P2: WASD+Spacebar)
+                </button>
+            </div>
+            <p class="text-xs mt-6 text-gray-400">
+                P1: Arrows to Move, Mouse Click to Shoot. P2: WASD to Move, Spacebar to Shoot (Directional).
+                <br>Q/Shift to Swap Weapon, ESC to Pause.
+            </p>
+        </div>
+    </div>
+
+    <!-- 2. Difficulty Menu Modal (Replaced Start Menu) -->
+    <div id="difficultyMenuModal" class="modal fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h1 class="text-xl sm:text-2xl mb-6 text-cyan-400">PIXEL DEAD (WAVES MODE)</h1>
+            <h2 class="text-lg sm:text-xl mb-6 text-white">SELECT STARTING DIFFICULTY</h2>
+            <div id="difficultyButtons" class="flex flex-col space-y-4">
+                <!-- Buttons will be generated by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. Pause Menu Modal -->
+    <div id="pauseModal" class="modal fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h2 class="text-xl sm:text-2xl mb-6 text-yellow-400">GAME PAUSED</h2>
+            <p id="currentModeDisplay" class="text-sm mb-6 text-white"></p>
+            <div class="flex flex-col space-y-4">
+                <button id="resumeButton" class="snes-button bg-green-600 border-green-700 hover:bg-green-700 active:bg-green-800">
+                    Resume Game (ESC)
+                </button>
+                <button id="playTicTacToeButton" class="snes-button bg-gray-600 border-gray-700 hover:bg-gray-700 active:bg-gray-800">
+                    Play Tic-Tac-Toe
+                </button>
+                <button id="changeModeButton" class="snes-button bg-red-600 border-red-700 hover:bg-red-700 active:bg-red-800">
+                    Change Difficulty / Exit
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 4. Tic-Tac-Toe Modal (New) -->
+    <div id="ticTacToeModal" class="modal fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h2 class="text-xl sm:text-2xl mb-4 text-cyan-400">TIC-TAC-TOE</h2>
+            <p id="tttModeDisplay" class="text-base mb-2 text-red-400"></p>
+            <p id="tttMessage" class="text-base mb-4 text-yellow-300">It is X's turn.</p>
+            
+            <div id="ticTacToeBoard" class="mb-6">
+                <!-- Tic-Tac-Toe Grid renders here -->
+            </div>
+
+            <div class="flex flex-col space-y-3">
+                <button id="tttRestartButton" class="snes-button bg-green-600 border-green-700 hover:bg-green-700 active:bg-green-800">
+                    Restart Game
+                </button>
+                <button id="tttCloseButton" class="snes-button bg-red-600 border-red-700 hover:bg-red-700 active:bg-red-800">
+                    Back to Main Menu (ESC)
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 5. Game Over Modal -->
+    <div id="gameOverModal" class="modal fixed inset-0 z-50 hidden items-center justify-center">
+        <div class="modal-content p-8 rounded-lg text-center game-ui-text w-11/12 max-w-md">
+            <h2 class="text-xl sm:text-2xl mb-4 text-red-500">GAME OVER!</h2>
+            <p class="text-lg mb-4 text-yellow-300">WAVES SURVIVED: <span id="wavesSurvived">0</span></p>
+            <p class="text-lg mb-4">P1 Final Score: <span id="finalScore1" class="player-cyan">0</span></p>
+            <p class="text-lg mb-4 hidden" id="p2FinalScoreContainer">P2 Final Score: <span id="finalScore2" class="player-magenta">0</span></p>
+            <p class="text-sm">RESTARTING IN 3 SECONDS...</p>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // --- Game Constants and Setup ---
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width;
+            const H = canvas.height;
+
+            // UI Elements
+            const score1Display = document.getElementById('score1Display');
+            const score2Display = document.getElementById('score2Display');
+            const health1Display = document.getElementById('health1Display');
+            const health2Display = document.getElementById('health2Display');
+            const weaponDisplay = document.getElementById('weaponDisplay'); 
+            const p2UiGroup = document.getElementById('p2UiGroup');
+            const waveDisplay = document.getElementById('waveDisplay');
+            const wavesSurvivedDisplay = document.getElementById('wavesSurvived');
+            
+            const gameOverModal = document.getElementById('gameOverModal');
+            const finalScore1Display = document.getElementById('finalScore1');
+            const finalScore2Display = document.getElementById('finalScore2');
+            const p2FinalScoreContainer = document.getElementById('p2FinalScoreContainer');
+            
+            const playerCountModal = document.getElementById('playerCountModal');
+            const select1PlayerButton = document.getElementById('select1Player');
+            const select2PlayersButton = document.getElementById('select2Players');
+
+            const difficultyMenuModal = document.getElementById('difficultyMenuModal');
+            const difficultyButtonsContainer = document.getElementById('difficultyButtons');
+            const pauseModal = document.getElementById('pauseModal');
+            const currentModeDisplay = document.getElementById('currentModeDisplay');
+            const resumeButton = document.getElementById('resumeButton');
+            const changeModeButton = document.getElementById('changeModeButton');
+
+            // NEW: Tic-Tac-Toe elements
+            const ticTacToeModal = document.getElementById('ticTacToeModal');
+            const ticTacToeBoard = document.getElementById('ticTacToeBoard');
+            const tttModeDisplay = document.getElementById('tttModeDisplay'); // New display for mode
+            const tttMessage = document.getElementById('tttMessage');
+            const playTicTacToeButton = document.getElementById('playTicTacToeButton');
+            const tttRestartButton = document.getElementById('tttRestartButton');
+            const tttCloseButton = document.getElementById('tttCloseButton');
+            
+            // Game State Flags and Variables
+            let isGameOver = true;
+            let isPaused = false;
+            let isTicTacToeActive = false; // NEW: State for the mini-game
+            let lastUpdateTime = 0;
+            let animationFrameId;
+            let currentDifficulty = null; 
+            let playerCount = 1; 
+            let currentWave = 0; // New: Current Wave Number
+            let zombiesPerWave = 0; // New: Total zombies to spawn this wave
+            let zombiesRemainingToSpawn = 0; // New: Zombies left in the queue
+            let rpgPacks = []; // Keep track of RPG packs on screen
+
+            // NEW: Tic-Tac-Toe Game State
+            let tictactoe = {
+                board: Array(9).fill(null),
+                currentPlayer: 'X',
+                status: 'playing', // 'playing', 'win', 'draw'
+                message: 'It is X\'s turn.',
+                playerTurn: 1, 
+                playerMode: '2P' // '2P' or 'AI'
+            };
+            
+            // Damage feedback constants
+            const HIT_FLASH_DURATION = 15; 
+            
+            // --- DIFFICULTY PRESETS ---
+            const DIFFICULTIES = {
+                EASY: { name: "Easy", color: "text-green-400", zombieSpeedMultiplier: 0.8, zombieHealthMultiplier: 0.75, baseZombies: 20, playerHealth: 150, scoreMultiplier: 1.0, },
+                MEDIUM: { name: "Medium", color: "text-yellow-400", zombieSpeedMultiplier: 1.0, zombieHealthMultiplier: 1.0, baseZombies: 30, playerHealth: 100, scoreMultiplier: 1.5, },
+                HARD: { name: "Hard", color: "text-orange-400", zombieSpeedMultiplier: 1.2, zombieHealthMultiplier: 1.5, baseZombies: 40, playerHealth: 75, scoreMultiplier: 2.0, },
+                SUPER_HARD: { name: "Super Hard", color: "text-red-500", zombieSpeedMultiplier: 1.5, zombieHealthMultiplier: 2.0, baseZombies: 50, playerHealth: 50, scoreMultiplier: 3.0, }
+            };
+            
+            // --- WEAPON CONFIGURATIONS ---
+            const WEAPONS = {
+                SHOTGUN: { type: 'ranged', fireRate: 350, bulletDamage: 1, bulletSpeed: 10, name: "Shotgun" },
+                KNIFE: { type: 'melee', fireRate: 500, damage: 2, range: 20, name: "Machete" },
+                RPG: { type: 'ranged_aoe', fireRate: 1500, bulletDamage: 15, bulletSpeed: 5, name: "RPG" }
+            };
+
+            // --- PLAYER TEMPLATES & State ---
+            const BASE_PLAYER_CONFIG = {
+                size: 16,
+                speed: 4,
+                isSwapping: false,
+                rpgAmmo: 0,
+                score: 0,
+                health: 100,
+                maxHealth: 100,
+                hitFlashTimer: 0,
+                keys: {},
+                lastShotTime: 0,
+                weapon: WEAPONS.SHOTGUN,
+            };
+
+            const PLAYER_TEMPLATES = [
+                // Player 1 (P1 - Arrows + Mouse)
+                {
+                    id: 1,
+                    color: '#00ffff', // Cyan
+                    controlKeys: { up: ['arrowup'], down: ['arrowdown'], left: ['arrowleft'], right: ['arrowright'], swap: ['shift'] },
+                    isMouseControlled: true,
+                    x: W / 3,
+                    y: H / 2,
+                    lastMoveDir: { dx: 1, dy: 0 }, 
+                    ...BASE_PLAYER_CONFIG
+                },
+                // Player 2 (P2 - WASD + Directional Shot)
+                {
+                    id: 2,
+                    color: '#ff00ff', // Magenta
+                    controlKeys: { up: ['w'], down: ['s'], left: ['a'], right: ['d'], swap: ['q'] },
+                    isMouseControlled: false,
+                    x: W * 2 / 3,
+                    y: H / 2,
+                    lastMoveDir: { dx: -1, dy: 0 },
+                    ...BASE_PLAYER_CONFIG
+                }
+            ];
+
+            // Game State Objects
+            let players = []; 
+            let bullets = [];
+            let zombies = [];
+            let healPacks = []; 
+            let scorePopups = []; 
+            
+            let mouse = { x: 0, y: 0, clicked: false }; 
+            let zombieSpawnTimer = 0;
+            let healSpawnTimer = 0; 
+            let ZOMBIE_SPAWN_INTERVAL = 120;
+            const RPG_PACK_SIZE = 14;
+            const RPG_BLAST_RADIUS = 60;
+            const HEAL_PACK_SIZE = 10;
+            const HEAL_AMOUNT = 25; 
+            const HEAL_SPAWN_INTERVAL = 300;
+            const ZOMBIE_TYPES_BASE = {
+                NORMAL: { health: 3, size: 16, speedBase: 0.8, score: 100, bodyColor: '#4b5563', headColor: '#9acd32' }, // Dark Gray / Olive Green
+                TANK: { health: 10, size: 24, speedBase: 0.5, score: 500, bodyColor: '#8b0000', headColor: '#daa520' } // Dark Red/Gold
+            };
+
+            // --- UI/Modal Logic ---
+            function hideAllModals() {
+                // ADDED ticTacToeModal to the list
+                [playerCountModal, difficultyMenuModal, pauseModal, gameOverModal, ticTacToeModal].forEach(m => {
+                    m.classList.add('hidden');
+                    m.classList.remove('flex');
+                });
+            }
+            
+            function showPlayerCountMenu() {
+                isGameOver = true;
+                isPaused = true;
+                isTicTacToeActive = false; // Ensure TTT is reset
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                
+                hideAllModals();
+                playerCountModal.classList.remove('hidden');
+                playerCountModal.classList.add('flex');
+            }
+
+            function showDifficultyMenu(count) {
+                playerCount = count;
+                hideAllModals();
+                
+                difficultyMenuModal.classList.remove('hidden');
+                difficultyMenuModal.classList.add('flex');
+            }
+
+            function generateDifficultyButtons() {
+                difficultyButtonsContainer.innerHTML = '';
+                Object.keys(DIFFICULTIES).forEach(key => {
+                    const diff = DIFFICULTIES[key];
+                    const button = document.createElement('button');
+                    button.className = `snes-button ${diff.color.replace('text-', 'bg-')}`;
+                    button.textContent = `${diff.name.toUpperCase()} (Health: ${diff.playerHealth} | Start Zombies: ${diff.baseZombies})`;
+                    button.onclick = () => startGame(diff);
+                    difficultyButtonsContainer.appendChild(button);
+                });
+            }
+            
+            function startGame(difficulty) {
+                currentDifficulty = difficulty;
+                
+                hideAllModals();
+                initGame();
+                startNewWave(); // Start the first wave
+            }
+            
+            // --- NEW TIC-TAC-TOE LOGIC ---
+
+            function checkWin(board) {
+                const lines = [
+                    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+                    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+                    [0, 4, 8], [2, 4, 6],
+                ];
+                for (let i = 0; i < lines.length; i++) {
+                    const [a, b, c] = lines[i];
+                    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                        return board[a]; 
+                    }
+                }
+                return null;
+            }
+
+            function checkDraw(board) {
+                return board.every(cell => cell !== null);
+            }
+            
+            // Minimax implementation for Unbeatable AI
+            // Scoring is relative to the AI ('O'). Maximize score for 'O', minimize for 'X'.
+            function minimax(board, depth, isMaximizing) {
+                const winner = checkWin(board);
+                
+                if (winner === 'O') return 10 - depth; // AI wins (Maximizer)
+                if (winner === 'X') return -10 + depth; // Player wins (Minimizer)
+                if (checkDraw(board)) return 0; // Draw
+
+                const availableMoves = board
+                    .map((cell, index) => cell === null ? index : null)
+                    .filter(index => index !== null);
+                
+                if (isMaximizing) { // AI 'O'
+                    let bestScore = -Infinity;
+                    for (const move of availableMoves) {
+                        board[move] = 'O';
+                        const score = minimax(board, depth + 1, false);
+                        board[move] = null; // Undo move
+                        bestScore = Math.max(score, bestScore);
+                    }
+                    return bestScore;
+                } else { // Player 'X'
+                    let bestScore = Infinity;
+                    for (const move of availableMoves) {
+                        board[move] = 'X';
+                        const score = minimax(board, depth + 1, true);
+                        board[move] = null; // Undo move
+                        bestScore = Math.min(score, bestScore);
+                    }
+                    return bestScore;
+                }
+            }
+
+            function getBestMove(board) {
+                let bestScore = -Infinity;
+                let bestMove = null;
+                const availableMoves = board
+                    .map((cell, index) => cell === null ? index : null)
+                    .filter(index => index !== null);
+
+                // Optimization: if center is open, take it immediately
+                if (board[4] === null) return 4;
+
+                for (const move of availableMoves) {
+                    board[move] = 'O';
+                    // Call minimax expecting the response score for the next turn (Minimizing 'X')
+                    const score = minimax(board, 0, false); 
+                    board[move] = null; // Undo move
+                    
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
+                }
+                return bestMove;
+            }
+
+
+            function makeAIMove() {
+                if (tictactoe.status !== 'playing') return;
+                
+                // Use the unbeatable Minimax AI
+                const move = getBestMove(tictactoe.board);
+
+                if (move !== null) {
+                    makeMove(move, true);
+                }
+            }
+
+            function makeMove(index, isAI = false) {
+                if (tictactoe.status !== 'playing' || tictactoe.board[index] !== null) {
+                    return;
+                }
+
+                if (!isAI && tictactoe.playerMode === 'AI' && tictactoe.currentPlayer === 'O') {
+                    // Prevent player from moving when it's AI's turn
+                    return;
+                }
+
+                tictactoe.board[index] = tictactoe.currentPlayer;
+                
+                const winner = checkWin(tictactoe.board);
+                
+                if (winner) {
+                    tictactoe.status = 'win';
+                    tictactoe.message = `${winner === 'X' ? 'P1 (X)' : tictactoe.playerMode === 'AI' ? 'AI (O)' : 'P2 (O)'} WINS!`;
+                } else if (checkDraw(tictactoe.board)) {
+                    tictactoe.status = 'draw';
+                    tictactoe.message = 'It\'s a DRAW!';
+                } else {
+                    // Switch player
+                    tictactoe.currentPlayer = tictactoe.currentPlayer === 'X' ? 'O' : 'X';
+                    tictactoe.playerTurn = tictactoe.playerTurn === 1 ? 2 : 1;
+                    
+                    if (tictactoe.playerMode === 'AI') {
+                        tictactoe.message = tictactoe.currentPlayer === 'X' ? 'It is P1 (X)\'s turn.' : 'Unbeatable AI (O) is thinking...';
+                    } else {
+                        tictactoe.message = `It is P${tictactoe.playerTurn} (${tictactoe.currentPlayer})'s turn.`;
+                    }
+                    
+                    if (tictactoe.playerMode === 'AI' && tictactoe.currentPlayer === 'O') {
+                        renderTicTacToe();
+                        setTimeout(makeAIMove, 500); // Delay AI move
+                    }
+                }
+
+                renderTicTacToe();
+            }
+
+            function renderTicTacToe() {
+                tttMessage.textContent = tictactoe.message;
+                ticTacToeBoard.innerHTML = '';
+                
+                // Display the mode clearly
+                if (tictactoe.playerMode === 'AI') {
+                    tttModeDisplay.textContent = 'MODE: P1 (X) vs UNBEATABLE AI (O)';
+                    tttModeDisplay.classList.remove('text-green-400');
+                    tttModeDisplay.classList.add('text-red-400');
+                } else {
+                    tttModeDisplay.textContent = 'MODE: P1 (X) vs P2 (O)';
+                    tttModeDisplay.classList.remove('text-red-400');
+                    tttModeDisplay.classList.add('text-green-400');
+                }
+
+                const grid = document.createElement('div');
+                grid.className = "grid grid-cols-3 gap-1 w-64 h-64 mx-auto border-4 border-yellow-400 p-1";
+
+                tictactoe.board.forEach((cell, index) => {
+                    const cellDiv = document.createElement('div');
+                    cellDiv.className = "flex items-center justify-center text-5xl font-bold bg-[#444455] ttt-cell";
+                    cellDiv.textContent = cell || '';
+                    cellDiv.dataset.index = index;
+                    
+                    if (cell === 'X') {
+                        cellDiv.classList.add('player-cyan');
+                    } else if (cell === 'O') {
+                        cellDiv.classList.add('player-magenta');
+                    }
+                    
+                    if (tictactoe.status === 'playing' && !cell) {
+                        // In 1P mode, only allow moves if it's 'X' turn
+                        const isPlayersTurn = (tictactoe.playerMode === '2P') || 
+                                              (tictactoe.playerMode === 'AI' && tictactoe.currentPlayer === 'X');
+
+                        if (isPlayersTurn) {
+                            cellDiv.classList.add('hover:bg-[#555566]', 'cursor-pointer');
+                            cellDiv.onclick = () => makeMove(index);
+                        } else {
+                            cellDiv.style.cursor = 'default';
+                        }
+
+                    } else {
+                        cellDiv.style.cursor = 'default';
+                    }
+                    
+                    grid.appendChild(cellDiv);
+                });
+                ticTacToeBoard.appendChild(grid);
+            }
+
+            function initTicTacToe() {
+                tictactoe = {
+                    board: Array(9).fill(null),
+                    currentPlayer: 'X',
+                    status: 'playing',
+                    message: 'It is X\'s turn (P1).',
+                    playerTurn: 1,
+                    playerMode: playerCount === 1 ? 'AI' : '2P' // AI if 1P, 2P if 2P
+                };
+                
+                // Set initial message based on mode
+                if (tictactoe.playerMode === 'AI') {
+                    tictactoe.message = 'It is P1 (X)\'s turn.';
+                } else {
+                    tictactoe.message = 'It is P1 (X)\'s turn.';
+                }
+                
+                renderTicTacToe();
+            }
+
+            function toggleTicTacToe() {
+                if (isGameOver) return; 
+
+                if (isTicTacToeActive) {
+                    // Close Tic-Tac-Toe -> return to Pause Menu
+                    isTicTacToeActive = false;
+                    ticTacToeModal.classList.add('hidden');
+                    ticTacToeModal.classList.remove('flex');
+                    
+                    // Re-show pause menu
+                    pauseModal.classList.remove('hidden');
+                    pauseModal.classList.add('flex');
+                } else {
+                    // Open Tic-Tac-Toe
+                    isTicTacToeActive = true;
+                    isPaused = true; 
+                    
+                    // Stop the main game loop
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+
+                    // Hide pause menu and show TTT
+                    hideAllModals(); 
+                    ticTacToeModal.classList.remove('hidden');
+                    ticTacToeModal.classList.add('flex');
+                    
+                    initTicTacToe(); // Start a new game
+                }
+            }
+            // --- END NEW TIC-TAC-TOE LOGIC ---
+
+
+            function togglePause() {
+                if (isGameOver) return;
+                
+                if (isTicTacToeActive) {
+                    // If TTT is open, ESC should close TTT and return to the pause menu
+                    toggleTicTacToe();
+                    return;
+                }
+
+                isPaused = !isPaused;
+
+                if (isPaused) {
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+                    currentModeDisplay.textContent = `Current Mode: ${currentDifficulty.name.toUpperCase()} (Wave ${currentWave})`;
+                    pauseModal.classList.remove('hidden');
+                    pauseModal.classList.add('flex');
+                } else {
+                    pauseModal.classList.add('hidden');
+                    pauseModal.classList.remove('flex');
+
+                    lastUpdateTime = performance.now();
+                    animationFrameId = requestAnimationFrame(gameLoop);
+                }
+            }
+            
+            function startNewWave() {
+                currentWave++;
+                
+                // --- Wave Difficulty Scaling ---
+                const baseZombies = currentDifficulty.baseZombies;
+                // Waves increase zombies by 10% each time, plus a base number
+                zombiesPerWave = Math.ceil(baseZombies + (currentWave - 1) * (baseZombies / 10));
+                zombiesRemainingToSpawn = zombiesPerWave;
+                
+                // Waves increase spawn speed slightly (max speed up to 1/3 of base interval)
+                ZOMBIE_SPAWN_INTERVAL = Math.max(
+                    currentDifficulty.spawnIntervalFrames || 120, // Fallback
+                    Math.max(30, 120 - (currentWave - 1) * 5)
+                );
+                
+                // Clear all remaining pickups to reward the new ones
+                healPacks = [];
+                rpgPacks = [];
+                
+                // Spawn wave reward (RPG Pack for each player)
+                players.forEach((p, index) => {
+                     if (p.health > 0) {
+                         spawnRPGPack(p.x + (index * 40) - 20, p.y);
+                         scorePopups.push({ text: `WAVE ${currentWave-1} CLEARED!`, x: p.x, y: p.y - 30, life: 120, vy: -0.2, color: '#ffcc00' });
+                     }
+                });
+
+                // Add a health boost every 5 waves
+                if (currentWave % 5 === 0) {
+                    players.forEach(p => {
+                        p.health = Math.min(p.maxHealth, p.health + HEAL_AMOUNT);
+                        scorePopups.push({ text: `BONUS HEALTH!`, x: p.x, y: p.y - 50, life: 90, vy: -0.3, color: '#00ff00' });
+                    });
+                }
+            }
+
+
+            // --- Drawing Helpers ---
+
+            function drawBlock(x, y, w, h, color) {
+                ctx.fillStyle = color;
+                ctx.fillRect(Math.round(x), Math.round(y), w, h);
+            }
+
+            function drawPlayer(p) {
+                const s = p.size; 
+                const x = p.x;
+                const y = p.y;
+                const playerColor = p.color; // Cyan or Magenta
+                
+                const skinColor = '#ffdbac'; 
+                const pantsColor = '#222222'; 
+                const bootColor = '#111111';
+                const armorColor = '#888888';
+                
+                const headSize = 8; 
+                const torsoWidth = 10; 
+                const torsoHeight = 8; 
+                const legWidth = 4;
+                const legHeight = 6;
+                const bootHeight = 2;
+
+                const totalHeight = headSize + torsoHeight + legHeight + bootHeight;
+                let currentY = y - totalHeight / 2;
+                
+                // 1. Head
+                drawBlock(x - headSize / 2, currentY, headSize, headSize, skinColor);
+                // Headband/Goggles (Player Color)
+                drawBlock(x - headSize / 2, currentY + 1, headSize, 2, playerColor);
+                currentY += headSize;
+
+                // 2. Torso (Body and Armor)
+                const torsoY = currentY;
+                // Main Torso (Pants color or dark)
+                drawBlock(x - torsoWidth / 2, torsoY, torsoWidth, torsoHeight, pantsColor);
+                // Chest Armor (Player Color outline)
+                drawBlock(x - torsoWidth / 2 + 1, torsoY + 1, torsoWidth - 2, torsoHeight - 2, armorColor);
+                drawBlock(x - 1, torsoY + 2, 2, 4, playerColor); // Stripe on armor
+                
+                // 3. Arms 
+                const armWidth = 3;
+                drawBlock(x - torsoWidth / 2 - armWidth, torsoY, armWidth, torsoHeight, pantsColor); // Left arm
+                drawBlock(x + torsoWidth / 2, torsoY, armWidth, torsoHeight, pantsColor); // Right arm
+                currentY += torsoHeight;
+                
+                // 4. Legs/Boots
+                const legGap = torsoWidth - (legWidth * 2);
+                const gapHalf = Math.max(1, Math.round(legGap / 2));
+                
+                // Upper Legs (Pants)
+                drawBlock(x - legWidth - gapHalf, currentY, legWidth, legHeight, pantsColor); // Left upper
+                drawBlock(x + gapHalf, currentY, legWidth, legHeight, pantsColor); // Right upper
+                currentY += legHeight;
+                
+                // 5. Boots
+                drawBlock(x - legWidth - gapHalf, currentY, legWidth, bootHeight, bootColor); // Left boot
+                drawBlock(x + gapHalf, currentY, legWidth, bootHeight, bootColor); // Right boot
+
+                // --- Aiming & Weapon Drawing ---
+                let dx, dy;
+                if (p.isMouseControlled) {
+                    dx = mouse.x - x;
+                    dy = mouse.y - y;
+                } else {
+                    dx = p.lastMoveDir.dx;
+                    dy = p.lastMoveDir.dy;
+                }
+                const angle = Math.atan2(dy, dx);
+                
+                const weapon = p.weapon;
+                const isRpg = weapon.type === 'ranged_aoe';
+                const armLength = 8; // Adjust pivot point for better looks
+                const gunPivotX = x + Math.cos(angle) * armLength * 0.2; // Pivot close to the body
+                const gunPivotY = y + Math.sin(angle) * armLength * 0.2;
+
+                ctx.save();
+                ctx.translate(gunPivotX, gunPivotY);
+                ctx.rotate(angle);
+
+                // Draw the weapon
+                if (weapon.type === 'ranged' || weapon.type === 'ranged_aoe') {
+                    const barrelLength = isRpg ? 18 : 12;
+                    const barrelThickness = isRpg ? 6 : 4;
+                    const handleLength = 4;
+                    const handleThickness = 2;
+
+                    // Barrel/Body
+                    ctx.fillStyle = isRpg ? '#4b4b4b' : '#666666';
+                    drawBlock(0, -barrelThickness / 2, barrelLength, barrelThickness, ctx.fillStyle);
+                    
+                    if (isRpg) {
+                        drawBlock(barrelLength - 3, -barrelThickness / 2 + 1, 3, barrelThickness - 2, '#ff4500'); // Rocket highlight
+                    }
+
+                    // Handle/Grip
+                    ctx.fillStyle = '#444444';
+                    drawBlock(-handleLength, -handleThickness / 2, handleLength, handleThickness, ctx.fillStyle);
+                } else if (weapon.type === 'melee') {
+                    // Machete (Simple blade)
+                    const bladeLength = 16;
+                    const handleLength = 4;
+                    
+                    ctx.fillStyle = '#ccaa66'; // Handle color
+                    drawBlock(-handleLength, -1, handleLength, 2, ctx.fillStyle);
+
+                    ctx.fillStyle = '#bbbbbb'; // Blade color
+                    // Blade shape (slightly angled)
+                    ctx.beginPath();
+                    ctx.moveTo(0, 2);
+                    ctx.lineTo(bladeLength, 0);
+                    ctx.lineTo(0, -2);
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // Health Bar
+                const barWidth = 24;
+                const barHeight = 4;
+                const barX = x - barWidth / 2;
+                const barY = y - totalHeight / 2 - 6; 
+                const healthRatio = p.health / p.maxHealth;
+                const filledWidth = barWidth * healthRatio;
+
+                drawBlock(barX - 1, barY - 1, barWidth + 2, barHeight + 2, '#000000'); 
+                drawBlock(barX, barY, barWidth, barHeight, '#444444');
+
+                if (filledWidth > 0) {
+                    let healthColor = '#00ff00';
+                    if (healthRatio < 0.5) healthColor = '#ffcc00';
+                    if (healthRatio < 0.25) healthColor = '#ff0000';
+                    drawBlock(barX, barY, filledWidth, barHeight, healthColor);
+                }
+            }
+            
+            function drawHealPack(pack) {
+                const s = HEAL_PACK_SIZE;
+                drawBlock(pack.x - s / 2, pack.y - s / 2, s, s, '#ff0000'); // Red square
+                drawBlock(pack.x - 1, pack.y - s / 2 + 2, 2, s - 4, '#ffffff'); // White vertical line
+                drawBlock(pack.x - s / 2 + 2, pack.y - 1, s - 4, 2, '#ffffff'); // White horizontal line
+            }
+            
+            function drawRpgPack(pack) {
+                const s = RPG_PACK_SIZE;
+                drawBlock(pack.x - s / 2, pack.y - s / 2, s, s, '#4b4b4b'); 
+                drawBlock(pack.x - s / 4, pack.y - s / 2 + 2, s / 2, s - 4, '#ff4500'); // Rocket body
+                drawBlock(pack.x - 2, pack.y - 2, 4, 4, '#ffcc00'); // Tip
+            }
+
+            function drawZombie(zombie) {
+                const s = zombie.size; 
+                const x = zombie.x;
+                const y = zombie.y;
+                
+                // Color changes based on health (more red when close to death)
+                const healthRatio = zombie.health / zombie.type.health;
+                
+                // Base colors
+                const bodyBaseColor = zombie.type.bodyColor; // e.g., #4b5563 (Dark gray)
+                const headBaseColor = zombie.type.headColor; // e.g., #9acd32 (Olive green)
+                const limbColor = '#111111'; // Black/dark limbs
+                const accentColor = '#8b0000'; // Dark red for wounds
+
+                // Health-based head color shift (more red as health decreases)
+                const hColor = healthRatio < 0.3 ? '#ff0000' : headBaseColor;
+                
+                // Proportional sizes for the zombie
+                const headSize = Math.max(6, Math.round(s * 0.4)); 
+                const torsoWidth = Math.max(10, Math.round(s * 0.7)); 
+                const torsoHeight = Math.round(s * 0.6); 
+                const legWidth = Math.max(3, Math.round(s * 0.2));
+                const legHeight = Math.round(s * 0.5);
+                const armWidth = 3;
+                const armHeight = torsoHeight + 4; 
+
+                const totalHeight = headSize + torsoHeight + legHeight;
+                let currentY = y - totalHeight / 2;
+
+                // Hunch offset (Lean forward slightly, gives a sense of movement)
+                const torsoXOffset = -1;
+                
+                // --- 1. Head (More detailed, decayed look) ---
+                const headX = x - headSize / 2;
+                
+                // Main Head Block
+                drawBlock(headX, currentY, headSize, headSize, hColor);
+                
+                // Decay/Wound on head (Darker accent)
+                drawBlock(headX + 1, currentY + 1, 1, 1, accentColor);
+                drawBlock(headX + headSize - 2, currentY + 2, 2, 2, accentColor);
+                
+                // Eyes (black/dark holes)
+                drawBlock(headX + 1, currentY + 2, 1, 1, '#000000'); 
+                drawBlock(headX + headSize - 2, currentY + 2, 1, 1, '#000000'); 
+                
+                // Exposed Neck/Spine (between head and torso)
+                currentY += headSize;
+                drawBlock(x - 2, currentY - 1, 4, 1, '#222'); // Dark neck segment
+                currentY -= 1; // Adjust overlap
+
+                // --- 2. Torso (Ragged Clothes with Shading) ---
+                const torsoY = currentY;
+                
+                // Main Torso Block (Base color)
+                drawBlock(x - torsoWidth / 2 + torsoXOffset, torsoY, torsoWidth, torsoHeight, bodyBaseColor);
+                
+                // Shade/Decay (Darker shade of body)
+                const bodyShade = '#374151'; // Slightly darker gray/blue
+                drawBlock(x - torsoWidth / 2 + torsoXOffset, torsoY, 2, torsoHeight, bodyShade); // Left side shading
+                drawBlock(x - torsoWidth / 2 + torsoXOffset, torsoY + torsoHeight - 2, torsoWidth, 2, bodyShade); // Bottom shading
+                
+                // Center Spine/Stitch line (Vertical line down the center)
+                drawBlock(x - 1 + torsoXOffset, torsoY, 2, torsoHeight, limbColor); 
+                
+                // --- 3. Arms (Longer, separated, and dangling) ---
+                
+                // Left Arm (upper)
+                drawBlock(x - torsoWidth / 2 - armWidth + torsoXOffset, torsoY, armWidth, 4, limbColor); 
+                // Left Arm (lower - offset for dangling look)
+                drawBlock(x - torsoWidth / 2 - armWidth + torsoXOffset + 1, torsoY + 4, armWidth - 1, armHeight - 4, limbColor); 
+
+                // Right Arm (upper)
+                drawBlock(x + torsoWidth / 2 + torsoXOffset, torsoY, armWidth, 4, limbColor); 
+                // Right Arm (lower - offset for dangling look)
+                drawBlock(x + torsoWidth / 2 + torsoXOffset, torsoY + 4, armWidth - 1, armHeight - 4, limbColor); 
+                
+                currentY += torsoHeight;
+                
+                // --- 4. Legs (More defined gait) ---
+                const legGap = torsoWidth - (legWidth * 2);
+                const gapHalf = Math.max(1, Math.round(legGap / 2));
+                
+                // Left Leg (Stepping/dragging)
+                drawBlock(x - legWidth - gapHalf + torsoXOffset, currentY, legWidth, legHeight, bodyBaseColor);
+                drawBlock(x - legWidth - gapHalf + torsoXOffset, currentY + legHeight - 2, legWidth, 2, limbColor); // Feet/Boot stub
+
+                // Right Leg (Opposite offset, slightly bent)
+                const rightLegOffset = 1;
+                drawBlock(x + gapHalf + torsoXOffset + rightLegOffset, currentY, legWidth, legHeight - 2, bodyBaseColor);
+                drawBlock(x + gapHalf + torsoXOffset + rightLegOffset, currentY + legHeight - 2, legWidth, 2, limbColor); // Feet/Boot stub
+
+
+                // Health Bar (Simple dot indicator for zombies)
+                if (healthRatio < 1) {
+                     const barWidth = torsoWidth + 2;
+                     const barHeight = 2;
+                     const barX = x - barWidth / 2;
+                     const barY = y - totalHeight / 2 - 4; 
+                     const filledWidth = barWidth * healthRatio;
+                     
+                     drawBlock(barX, barY, barWidth, barHeight, '#444444');
+                     drawBlock(barX, barY, filledWidth, barHeight, '#ff0000');
+                }
+            }
+
+
+            // --- Core Game Logic ---
+
+            function updateUI() {
+                // P1 UI (Always visible)
+                score1Display.textContent = `P1 SCORE: ${String(players[0].score).padStart(5, '0')} (${currentDifficulty.scoreMultiplier}x)`;
+                health1Display.textContent = `P1 HEALTH: ${Math.max(0, players[0].health)}`; 
+                
+                // P2 UI (Only visible in 2-player mode)
+                if (playerCount === 2) {
+                    p2UiGroup.classList.remove('hidden');
+                    score2Display.textContent = `P2 SCORE: ${String(players[1].score).padStart(5, '0')} (${currentDifficulty.scoreMultiplier}x)`;
+                    health2Display.textContent = `P2 HEALTH: ${Math.max(0, players[1].health)}`; 
+                } else {
+                    p2UiGroup.classList.add('hidden');
+                }
+                
+                // Wave and Zombie count
+                waveDisplay.textContent = `WAVE ${currentWave} / ZOMBIES: ${zombies.length + zombiesRemainingToSpawn}`;
+
+                // Shared Weapon Display 
+                weaponDisplay.textContent = `WEAPON: ${players[0].weapon.name}${players[0].weapon === WEAPONS.RPG ? ` (${players[0].rpgAmmo})` : ''}${playerCount === 2 ? ` | P2 WEAPON: ${players[1].weapon.name}${players[1].weapon === WEAPONS.RPG ? ` (${players[1].rpgAmmo})` : ''}` : ''}`;
+            }
+
+            function spawnZombie() {
+                if (zombiesRemainingToSpawn <= 0) return;
+
+                const diff = currentDifficulty;
+
+                // 80% Normal, 20% Tank
+                const typeKey = Math.random() < 0.2 ? 'TANK' : 'NORMAL';
+                const baseType = ZOMBIE_TYPES_BASE[typeKey];
+                
+                // Wave multiplier for stats
+                const waveMult = 1 + (currentWave - 1) * 0.1; 
+
+                const size = baseType.size;
+                const speed = baseType.speedBase * diff.zombieSpeedMultiplier * waveMult; 
+                const health = Math.ceil(baseType.health * diff.zombieHealthMultiplier * waveMult);
+                
+                let x, y;
+                const side = Math.floor(Math.random() * 4);
+                switch (side) {
+                    case 0: x = Math.random() * W; y = -size; break; 
+                    case 1: x = Math.random() * W; y = H + size; break;
+                    case 2: x = -size; y = Math.random() * H; break;
+                    case 3: x = W + size; y = Math.random() * H; break;
+                }
+
+                zombies.push({ 
+                    x, 
+                    y, 
+                    size, 
+                    speed, 
+                    health, 
+                    type: baseType 
+                });
+                zombiesRemainingToSpawn--;
+            }
+            
+            function spawnHealPack(x = Math.random() * (W - 40) + 20, y = Math.random() * (H - 40) + 20) {
+                 healPacks.push({ x, y, size: HEAL_PACK_SIZE });
+            }
+
+            function spawnRPGPack(x = Math.random() * (W - 40) + 20, y = Math.random() * (H - 40) + 20) {
+                 rpgPacks.push({ x, y, size: RPG_PACK_SIZE });
+            }
+
+            function fireRangedWeapon(p) {
+                let dx, dy;
+                
+                if (p.isMouseControlled) {
+                    dx = mouse.x - p.x;
+                    dy = mouse.y - p.y;
+                } else { // Directional shot for P2
+                    dx = p.lastMoveDir.dx;
+                    dy = p.lastMoveDir.dy;
+                }
+                const angle = Math.atan2(dy, dx);
+                
+                const weapon = p.weapon;
+                const isRpg = weapon.type === 'ranged_aoe';
+
+                if (isRpg) {
+                    if (p.rpgAmmo > 0) {
+                        p.rpgAmmo--; 
+                    } else {
+                        p.weapon = WEAPONS.SHOTGUN; 
+                        return;
+                    }
+                }
+
+                bullets.push({
+                    x: p.x,
+                    y: p.y,
+                    vx: Math.cos(angle) * weapon.bulletSpeed,
+                    vy: Math.sin(angle) * weapon.bulletSpeed,
+                    radius: isRpg ? 6 : 3, 
+                    color: isRpg ? '#ff4500' : p.color, 
+                    damage: weapon.bulletDamage,
+                    isRpg: isRpg, 
+                    blastRadius: isRpg ? RPG_BLAST_RADIUS : 0,
+                    shooterId: p.id 
+                });
+                
+                if (p.rpgAmmo === 0 && p.weapon === WEAPONS.RPG) {
+                    p.weapon = WEAPONS.SHOTGUN;
+                }
+            }
+
+            function performMeleeAttack(p) {
+                const weapon = p.weapon;
+                for (let j = zombies.length - 1; j >= 0; j--) {
+                    const zombie = zombies[j];
+                    const dx = zombie.x - p.x;
+                    const dy = zombie.y - p.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < p.size / 2 + weapon.range) {
+                        zombie.health -= weapon.damage;
+                        
+                        if (zombie.health <= 0) {
+                            const earnedScore = Math.floor(zombie.type.score * currentDifficulty.scoreMultiplier);
+                            scorePopups.push({ text: `+${earnedScore} (P${p.id})`, x: zombie.x, y: zombie.y, life: 60, vy: -0.5, color: p.color });
+                            p.score += earnedScore;
+                            zombies.splice(j, 1);
+                        }
+                    }
+                }
+            }
+
+            function handleAttack(p, isKeyTriggered = false) {
+                if (p.health <= 0) return;
+                
+                if (p.isMouseControlled && !mouse.clicked) return; 
+                if (!p.isMouseControlled && !isKeyTriggered) return;
+
+                const currentTime = Date.now();
+                if (currentTime - p.lastShotTime < p.weapon.fireRate) {
+                    return; 
+                }
+
+                p.lastShotTime = currentTime; 
+
+                if (p.weapon.type === 'ranged' || p.weapon.type === 'ranged_aoe') {
+                    fireRangedWeapon(p);
+                } else if (p.weapon.type === 'melee') {
+                    performMeleeAttack(p);
+                }
+            }
+
+
+            function handleInput() {
+                if (isGameOver || isPaused || isTicTacToeActive) return;
+
+                players.forEach(p => {
+                    if (p.health <= 0) return;
+
+                    let movedX = 0;
+                    let movedY = 0;
+
+                    // Movement
+                    const speed = p.speed;
+                    if (p.controlKeys.up.some(key => p.keys[key])) { p.y -= speed; movedY = -1; }
+                    if (p.controlKeys.down.some(key => p.keys[key])) { p.y += speed; movedY = 1; }
+                    if (p.controlKeys.left.some(key => p.keys[key])) { p.x -= speed; movedX = -1; }
+                    if (p.controlKeys.right.some(key => p.keys[key])) { p.x += speed; movedX = 1; }
+
+                    if (movedX !== 0 || movedY !== 0) {
+                        p.lastMoveDir = { dx: movedX, dy: movedY };
+                    }
+
+                    // Keep player in bounds
+                    p.x = Math.max(p.size / 2, Math.min(W - p.size / 2, p.x));
+                    p.y = Math.max(p.size / 2, Math.min(H - p.size / 2, p.y));
+
+                    // Weapon Swapping
+                    if (p.controlKeys.swap.some(key => p.keys[key])) {
+                        if (!p.isSwapping) {
+                            p.isSwapping = true; 
+                            
+                            if (p.weapon === WEAPONS.SHOTGUN) {
+                                p.weapon = (p.rpgAmmo > 0) ? WEAPONS.RPG : WEAPONS.KNIFE;
+                            } else if (p.weapon === WEAPONS.KNIFE) {
+                                p.weapon = (p.rpgAmmo > 0) ? WEAPONS.RPG : WEAPONS.SHOTGUN;
+                            } else if (p.weapon === WEAPONS.RPG) {
+                                p.weapon = WEAPONS.SHOTGUN;
+                            }
+                        }
+                    } else {
+                        p.isSwapping = false; 
+                    }
+                    
+                    if (p.weapon === WEAPONS.RPG && p.rpgAmmo <= 0) {
+                        p.weapon = WEAPONS.SHOTGUN; 
+                    }
+                });
+                
+                // Handle P1 Attack (Mouse Controlled, checks mouse.clicked)
+                if (players.length > 0 && players[0].isMouseControlled) {
+                    handleAttack(players[0]);
+                }
+                // P2 Attack is handled in keydown event listener (Spacebar)
+            }
+
+            function updateGame(deltaTime) {
+                if (isPaused || isTicTacToeActive) return;
+
+                // 1. Update Player Status
+                players.forEach(p => {
+                    if (p.health > 0 && p.hitFlashTimer > 0) {
+                        p.hitFlashTimer--;
+                    }
+                });
+
+                scorePopups = scorePopups.filter(popup => {
+                    if (popup.vy) {
+                        popup.y += popup.vy; 
+                    }
+                    popup.life--;
+                    return popup.life > 0;
+                });
+                
+                // 2. Update Bullets
+                bullets = bullets.filter(bullet => {
+                    bullet.x += bullet.vx;
+                    bullet.y += bullet.vy;
+                    return bullet.x > -W && bullet.x < W * 2 && bullet.y > -H && bullet.y < H * 2;
+                });
+
+                // 3. Update Zombies (Tracking logic is here - they are smart!)
+                zombies.forEach(zombie => {
+                    let closestPlayer = null;
+                    let minDist = Infinity;
+
+                    players.forEach(p => {
+                        if (p.health > 0) {
+                            const dist = Math.sqrt(Math.pow(p.x - zombie.x, 2) + Math.pow(p.y - zombie.y, 2));
+                            if (dist < minDist) {
+                                minDist = dist;
+                                closestPlayer = p;
+                            }
+                        }
+                    });
+
+                    if (closestPlayer) {
+                        const dx = closestPlayer.x - zombie.x;
+                        const dy = closestPlayer.y - zombie.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        // Move towards the closest player
+                        zombie.x += (dx / dist) * zombie.speed;
+                        zombie.y += (dy / dist) * zombie.speed;
+
+                        if (dist < closestPlayer.size / 2 + zombie.size / 2) {
+                            if (closestPlayer.hitFlashTimer <= 0) { 
+                                if (closestPlayer.health > 0) {
+                                    closestPlayer.health -= 5; 
+                                    closestPlayer.hitFlashTimer = HIT_FLASH_DURATION; 
+                                }
+                                // Knockback
+                                closestPlayer.x -= (dx / dist) * 5; 
+                                closestPlayer.y -= (dy / dist) * 5;
+                            }
+                        }
+                    }
+                });
+
+                // 4. Collision Detection (Bullet vs Zombie)
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const bullet = bullets[i];
+                    const shooter = players.find(p => p.id === bullet.shooterId);
+                    let hit = false;
+                    let explosionCenter = null; 
+
+                    for (let j = zombies.length - 1; j >= 0; j--) {
+                        const zombie = zombies[j];
+                        const dx = bullet.x - zombie.x;
+                        const dy = bullet.y - zombie.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+
+                        if (dist < zombie.size / 2 + bullet.radius) {
+                            zombie.health -= bullet.damage; 
+                            hit = true;
+                            explosionCenter = { x: bullet.x, y: bullet.y }; 
+                            
+                            if (!bullet.isRpg) { 
+                                 if (zombie.health <= 0) {
+                                     const earnedScore = Math.floor(zombie.type.score * currentDifficulty.scoreMultiplier);
+                                     scorePopups.push({ text: `+${earnedScore} (P${shooter.id})`, x: zombie.x, y: zombie.y, life: 60, vy: -0.5, color: shooter.color });
+                                     shooter.score += earnedScore; 
+                                     zombies.splice(j, 1);
+                                 }
+                                break; 
+                            } 
+                        }
+                    }
+
+                    const offScreen = bullet.x < -10 || bullet.x > W + 10 || bullet.y < -10 || bullet.y > H + 10;
+                    
+                    if (bullet.isRpg && (hit || offScreen)) {
+                        explosionCenter = explosionCenter || { x: bullet.x, y: bullet.y };
+                        
+                        for (let j = zombies.length - 1; j >= 0; j--) {
+                            const zombie = zombies[j];
+                            const dx = explosionCenter.x - zombie.x;
+                            const dy = explosionCenter.y - zombie.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+
+                            if (dist < bullet.blastRadius) {
+                                const proximity = 1 - (dist / bullet.blastRadius); 
+                                const aoeDamage = Math.ceil(bullet.damage * proximity);
+                                zombie.health -= aoeDamage;
+
+                                if (zombie.health <= 0) {
+                                    const earnedScore = Math.floor(zombie.type.score * currentDifficulty.scoreMultiplier);
+                                    scorePopups.push({ text: `+${earnedScore} (P${shooter.id})`, x: zombie.x, y: zombie.y, life: 60, vy: -0.5, color: shooter.color });
+                                    shooter.score += earnedScore;
+                                    zombies.splice(j, 1);
+                                }
+                            }
+                        }
+                        
+                        scorePopups.push({ text: '', x: explosionCenter.x, y: explosionCenter.y, life: 10, radius: 1, maxRadius: RPG_BLAST_RADIUS, color: '#ff8800' });
+                        bullets.splice(i, 1); 
+                    } else if (hit && !bullet.isRpg) {
+                        bullets.splice(i, 1); 
+                    }
+                }
+
+                // 5. Player vs Pickups (Heal Pack)
+                for (let i = healPacks.length - 1; i >= 0; i--) {
+                    const pack = healPacks[i];
+                    players.forEach(p => {
+                        if (p.health > 0) {
+                            const dx = pack.x - p.x;
+                            const dy = pack.y - p.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < p.size / 2 + pack.size / 2) {
+                                p.health = Math.min(p.maxHealth, p.health + HEAL_AMOUNT);
+                                scorePopups.push({ text: `+${HEAL_AMOUNT} HEALTH`, x: p.x, y: p.y - 15, life: 60, vy: -0.5, color: '#00ff00' });
+                                healPacks.splice(i, 1);
+                            }
+                        }
+                    });
+                }
+                
+                // 5b. Player vs Pickups (RPG Pack)
+                for (let i = rpgPacks.length - 1; i >= 0; i--) {
+                    const pack = rpgPacks[i];
+                    players.forEach(p => {
+                        if (p.health > 0) {
+                            const dx = pack.x - p.x;
+                            const dy = pack.y - p.y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < p.size / 2 + pack.size / 2) {
+                                p.rpgAmmo += 5; // Give 5 RPG rounds
+                                p.weapon = WEAPONS.RPG;
+                                scorePopups.push({ text: `RPG AMMO +5`, x: p.x, y: p.y - 15, life: 60, vy: -0.5, color: '#ff4500' });
+                                rpgPacks.splice(i, 1);
+                            }
+                        }
+                    });
+                }
+
+                // 6. Spawning (Wave-driven)
+                zombieSpawnTimer++;
+                // Only spawn if there are still zombies queued AND less than 15 zombies currently on screen
+                if (zombiesRemainingToSpawn > 0 && zombies.length < 15 && zombieSpawnTimer >= ZOMBIE_SPAWN_INTERVAL) {
+                    spawnZombie();
+                    zombieSpawnTimer = 0;
+                }
+                
+                // Heal pack spontaneous spawn
+                healSpawnTimer++;
+                if (healSpawnTimer >= HEAL_SPAWN_INTERVAL && healPacks.length < 3) { 
+                    spawnHealPack(); 
+                    healSpawnTimer = 0;
+                }
+                
+                // 7. Wave Completion Check
+                if (zombiesRemainingToSpawn === 0 && zombies.length === 0) {
+                    // All zombies spawned and killed, start next wave
+                    startNewWave();
+                }
+
+                // 8. Check Game Over (Check if ALL players are dead)
+                const alivePlayers = players.filter(p => p.health > 0).length;
+                if (alivePlayers === 0) {
+                    endGame();
+                }
+            }
+
+            function render() {
+                ctx.fillStyle = '#334';
+                ctx.fillRect(0, 0, W, H);
+
+                // Draw explosion effects (for RPG)
+                scorePopups.forEach(popup => {
+                    if (popup.radius) {
+                        const lifeRatio = popup.life / 10;
+                        const radius = popup.maxRadius * (1 - lifeRatio);
+                        ctx.fillStyle = `rgba(255, 136, 0, ${lifeRatio * 0.5})`; // Orange/Yellow transparent blast
+                        ctx.beginPath();
+                        ctx.arc(popup.x, popup.y, radius, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                });
+
+                players.forEach(p => {
+                    // --- DAMAGE FLASH EFFECT ---
+                    if (p.health > 0 && p.hitFlashTimer > 0) {
+                        ctx.fillStyle = `rgba(255, 0, 0, ${p.hitFlashTimer / HIT_FLASH_DURATION * 0.3})`;
+                        ctx.fillRect(0, 0, W, H);
+                    }
+                });
+
+                // Draw Pickups
+                healPacks.forEach(drawHealPack);
+                rpgPacks.forEach(drawRpgPack);
+
+                // Draw Bullets
+                bullets.forEach(bullet => {
+                    drawBlock(bullet.x - bullet.radius, bullet.y - bullet.radius, bullet.radius * 2, bullet.radius * 2, bullet.color);
+                });
+
+                // Draw Zombies 
+                zombies.forEach(drawZombie);
+                
+                // Draw Players
+                players.forEach(p => {
+                    if (p.health > 0) {
+                        drawPlayer(p);
+                    }
+                    // Draw player damage overlay last
+                    if (p.health > 0 && p.hitFlashTimer > 0) {
+                        // Small red overlay on the character itself
+                        ctx.fillStyle = `rgba(255, 0, 0, ${p.hitFlashTimer / HIT_FLASH_DURATION * 0.8})`;
+                        // Draw a temporary block over the player area
+                        const totalHeight = 8 + 8 + 6 + 2; // Head, Torso, Leg, Boot sizes
+                        ctx.fillRect(p.x - p.size, p.y - totalHeight / 2 - 2, p.size * 2, totalHeight + 4);
+                    }
+                });
+                
+                // --- SCORE POPUPS ---
+                scorePopups.forEach(popup => {
+                    if (popup.text) {
+                        ctx.font = '8px "Press Start 2P"';
+                        ctx.strokeStyle = '#000000'; 
+                        ctx.lineWidth = 2;
+                        ctx.fillStyle = popup.color || `rgba(255, 255, 0, ${popup.life / 60})`; 
+                        const textWidth = ctx.measureText(popup.text).width;
+                        const textX = popup.x - textWidth / 2;
+                        ctx.strokeText(popup.text, textX, popup.y);
+                        ctx.fillText(popup.text, textX, popup.y);
+                    }
+                });
+
+                updateUI();
+                
+                if (isPaused) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                    ctx.fillRect(0, 0, W, H);
+                }
+            }
+
+            function gameLoop(timestamp) {
+                if (isGameOver || isPaused || isTicTacToeActive) return;
+
+                const deltaTime = (timestamp - lastUpdateTime) / 1000;
+                lastUpdateTime = timestamp;
+
+                handleInput();
+                updateGame(deltaTime);
+                render();
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            // --- Event Handlers ---
+            function handleMouseMove(e) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                mouse.x = (e.clientX - rect.left) * scaleX;
+                mouse.y = (e.clientY - rect.top) * scaleY;
+            }
+
+            function handleMouseDown(e) {
+                if (e.button === 0) {
+                    mouse.clicked = true;
+                }
+            }
+
+            function handleMouseUp(e) {
+                if (e.button === 0) {
+                    mouse.clicked = false;
+                }
+            }
+
+            document.addEventListener('keydown', (e) => {
+                const key = e.key.toLowerCase();
+                
+                players.forEach(p => {
+                    p.keys[key] = true;
+                });
+                
+                if (key === 'escape') {
+                    e.preventDefault();
+                    if (!isGameOver) {
+                        if (isTicTacToeActive) {
+                            toggleTicTacToe(); // Close TTT, return to Pause Menu
+                        } else {
+                            togglePause(); // Pause/Unpause main game
+                        }
+                    }
+                }
+                
+                // P2 Shooting/Melee (Uses Spacebar as dedicated shoot button)
+                if (playerCount === 2 && players[1].health > 0 && key === ' ') {
+                    handleAttack(players[1], true);
+                    e.preventDefault();
+                }
+                
+                // Prevent scrolling/default actions for control keys
+                const allControlKeys = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'shift', 'q', ' '];
+                if (allControlKeys.includes(key)) {
+                    e.preventDefault();
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                const key = e.key.toLowerCase();
+                players.forEach(p => {
+                    p.keys[key] = false;
+                });
+            });
+
+            // Button Click Handlers for Modals
+            select1PlayerButton.onclick = () => showDifficultyMenu(1);
+            select2PlayersButton.onclick = () => showDifficultyMenu(2);
+            resumeButton.onclick = togglePause;
+            changeModeButton.onclick = showPlayerCountMenu;
+            
+            // NEW: Tic-Tac-Toe Button Handlers
+            playTicTacToeButton.onclick = toggleTicTacToe;
+            tttRestartButton.onclick = initTicTacToe;
+            tttCloseButton.onclick = toggleTicTacToe;
+
+
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mouseup', handleMouseUp);
+
+            // --- Game Flow Control ---
+
+            function initGame() {
+                // Initialize players array based on selected count
+                players = [];
+                for (let i = 0; i < playerCount; i++) {
+                    const template = JSON.parse(JSON.stringify(PLAYER_TEMPLATES[i])); // Deep copy
+                    template.health = currentDifficulty.playerHealth;
+                    template.maxHealth = currentDifficulty.playerHealth;
+                    template.weapon = WEAPONS.SHOTGUN; // Reset weapon
+                    template.keys = {}; // Clear keys
+                    template.lastShotTime = 0; // Clear shot time
+                    template.rpgAmmo = 0; // Clear ammo
+                    players.push(template);
+                }
+
+                bullets = [];
+                zombies = [];
+                healPacks = []; 
+                rpgPacks = [];
+                scorePopups = []; 
+                zombieSpawnTimer = 0;
+                healSpawnTimer = 0; 
+                isGameOver = false;
+                isPaused = false; 
+                isTicTacToeActive = false; // Reset mini-game state
+                currentWave = 0;
+                zombiesPerWave = 0;
+                zombiesRemainingToSpawn = 0;
+
+                hideAllModals();
+
+                lastUpdateTime = performance.now();
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                // Wave 1 starts in startGame() after initGame
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            function endGame() {
+                isGameOver = true;
+                isPaused = true;
+                isTicTacToeActive = false;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null; 
+                }
+
+                wavesSurvivedDisplay.textContent = currentWave - 1; // Wave counter is 1 ahead of completed waves
+                finalScore1Display.textContent = String(players[0].score).padStart(5, '0');
+                
+                if (playerCount === 2) {
+                    p2FinalScoreContainer.classList.remove('hidden');
+                    finalScore2Display.textContent = String(players[1].score).padStart(5, '0');
+                } else {
+                    p2FinalScoreContainer.classList.add('hidden');
+                }
+
+                gameOverModal.classList.remove('hidden');
+                gameOverModal.classList.add('flex');
+
+                setTimeout(() => {
+                    if (isGameOver) {
+                         showPlayerCountMenu();
+                    }
+                }, 3000); 
+            }
+
+            // --- Initial Start ---
+            window.onload = function() {
+                generateDifficultyButtons();
+                showPlayerCountMenu();
+            };
+        })();
+    </script>
+</body>
+</html>
