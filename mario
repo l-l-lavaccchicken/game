@@ -1,0 +1,139 @@
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Better Mario Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Sky blue */
+        }
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #8B4513; /* Brown ground */
+            position: relative;
+        }
+        .character {
+            width: 50px;
+            height: 50px;
+            background-color: red;
+            position: absolute;
+            bottom: 50px;
+            left: 50px;
+        }
+        .coin {
+            width: 30px;
+            height: 30px;
+            background-color: gold;
+            position: absolute;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        let character = {
+            x: 50,
+            y: 350,
+            width: 50,
+            height: 50,
+            speed: 5,
+            dy: 0,
+            gravity: 0.5,
+            jumpPower: -10,
+            isJumping: false,
+        };
+
+        let coins = [];
+        let score = 0;
+
+        // Create coins at random positions
+        function createCoins(num) {
+            for (let i = 0; i < num; i++) {
+                let coin = {
+                    x: Math.random() * (canvas.width - 30),
+                    y: Math.random() * (canvas.height - 30),
+                    collected: false
+                };
+                coins.push(coin);
+            }
+        }
+
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update character position
+            if (character.isJumping) {
+                character.dy += character.gravity;
+                character.y += character.dy;
+
+                if (character.y >= 350) {
+                    character.y = 350;
+                    character.isJumping = false;
+                    character.dy = 0;
+                }
+            }
+
+            // Draw character
+            ctx.fillStyle = "red"; 
+            ctx.fillRect(character.x, character.y, character.width, character.height);
+
+            // Draw coins
+            coins.forEach(coin => {
+                if (!coin.collected) {
+                    ctx.fillStyle = "gold";
+                    ctx.beginPath();
+                    ctx.arc(coin.x + 15, coin.y + 15, 15, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // Check for coin collection
+            coins.forEach(coin => {
+                if (!coin.collected &&
+                    character.x < coin.x + 30 &&
+                    character.x + character.width > coin.x &&
+                    character.y < coin.y + 30 &&
+                    character.y + character.height > coin.y) {
+
+                    coin.collected = true;
+                    score++;
+                }
+            });
+
+            // Display score
+            ctx.fillStyle = "black";
+            ctx.font = "20px Arial";
+            ctx.fillText("Score: " + score, 10, 20);
+        }
+
+        function jump() {
+            if (!character.isJumping) {
+                character.isJumping = true;
+                character.dy = character.jumpPower; // Set jump strength
+            }
+        }
+
+        document.addEventListener("keydown", function(event) {
+            if (event.code === "Space") {
+                jump();
+            }
+        });
+
+        createCoins(5);
+        setInterval(update, 1000 / 60); // Update 60 times per second
+    </script>
+</body>
+</html>
+```
+
+
