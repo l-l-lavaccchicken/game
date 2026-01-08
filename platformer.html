@@ -1,187 +1,93 @@
 ```html
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Platformer Game</title>
+    <title>Jumping Character Game</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background: #87CEEB; /* Sky blue */
+            background-color: #87CEEB;
         }
-        #gameCanvas {
+
+        canvas {
+            background-color: #fff;
+            border: 1px solid #000;
             display: block;
             margin: 0 auto;
-            background: #7CFC00; /* Lawn green */
-            border: 2px solid #000;
         }
-        .platform {
-            background: #8B4513; /* Saddle brown */
-            position: absolute;
-            height: 20px;
-        }
-        .player {
+
+        .character {
             width: 30px;
             height: 30px;
-            background: #FF4500; /* Orange red */
+            background-color: red;
             position: absolute;
+            border-radius: 5px;
         }
-        .power-up {
-            width: 20px;
+
+        .ground {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
             height: 20px;
-            position: absolute;
-        }
-        .fire-flower {
-            background: #FFD700; /* Gold */
-        }
-        .ice-flower {
-            background: #00BFFF; /* Deep sky blue */
-        }
-        .boss {
-            width: 50px;
-            height: 50px;
-            background: #8B0000; /* Dark red */
-            position: absolute;
+            background: #654321;
         }
     </style>
 </head>
+
 <body>
-    <canvas id="gameCanvas" width="800" height="400"></canvas>
-    
+    <div id="character" class="character"></div>
+    <div class="ground"></div>
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+        const character = document.getElementById('character');
+        const ground = document.querySelector('.ground');
 
-        const player = {
-            x: 50,
-            y: 300,
-            width: 30,
-            height: 30,
-            dy: 0,
-            gravity: 0.5,
-            jumpPower: -10,
-            isJumping: false,
-            power: null
-        };
+        let isJumping = false;
+        let jumpHeight = 0;
+        let characterPosition = 100;
+        const gravity = 2;
 
-        const platforms = [
-            { x: 0, y: 380, width: 800, height: 20 },
-            { x: 100, y: 300, width: 100, height: 20 },
-            { x: 300, y: 250, width: 100, height: 20 },
-            { x: 500, y: 200, width: 100, height: 20 },
-            { x: 700, y: 150, width: 100, height: 20 },
-            // Boss level platforms would be added in the levels below
-        ];
+        // Set initial position
+        character.style.bottom = `${characterPosition}px`;
 
-        const powerUps = [
-            { x: 150, y: 250, type: 'fire-flower' },
-            { x: 600, y: 150, type: 'ice-flower' }
-        ];
-
-        const bosses = [
-            { x: 350, y: 250, },
-            { x: 400, y: 150, }
-        ];
-        
-        let currentLevel = 0;
-        let score = 0;
-
-        function update() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawPlatforms();
-            drawPlayer();
-            drawPowerUps();
-            drawBosses();
-            applyPhysics();
-            requestAnimationFrame(update);
-        }
-
-        function drawPlatforms() {
-            platforms.forEach(platform => {
-                ctx.fillStyle = 'brown';
-                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-            });
-        }
-
-        function drawPlayer() {
-            ctx.fillStyle = player.power === 'fire' ? 'orange' : (player.power === 'ice' ? 'lightblue' : 'red');
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-        }
-
-        function drawPowerUps() {
-            powerUps.forEach(p => {
-                ctx.fillStyle = p.type === 'fire-flower' ? 'gold' : 'deepskyblue';
-                ctx.fillRect(p.x, p.y, 20, 20);
-            });
-        }
-
-        function drawBosses() {
-            ctx.fillStyle = 'darkred';
-            bosses.forEach(boss => {
-                ctx.fillRect(boss.x, boss.y, 50, 50);
-            });
-        }
-
-        function applyPhysics() {
-            player.dy += player.gravity;
-            player.y += player.dy;
-            if (player.y + player.height > canvas.height) {
-                player.y = canvas.height - player.height;
-                player.dy = 0;
-                player.isJumping = false;
-            }
-        }
-
-        function jump() {
-            if (!player.isJumping) {
-                player.dy = player.jumpPower;
-                player.isJumping = true;
-            }
-        }
-
-        function collectPowerUp() {
-            powerUps.forEach((p, index) => {
-                if (player.x < p.x + 20 && player.x + player.width > p.x &&
-                    player.y < p.y + 20 && player.y + player.height > p.y) {
-                    player.power = p.type === 'fire-flower' ? 'fire' : 'ice';
-                    powerUps.splice(index, 1); // Remove power-up from array
-                }
-            });
-        }
-
-        function defeatBoss() {
-            // Placeholder logic
-            bosses.forEach((boss, index) => {
-                if (player.x < boss.x + 50 && player.x + player.width > boss.x &&
-                    player.y < boss.y + 50 && player.y + player.height > boss.y) {
-                    bosses.splice(index, 1); // Remove boss
-                    score += 10;
-                    alert('Boss defeated! Score: ' + score);
-                }
-            });
-        }
-
-        window.addEventListener('keydown', function(event) {
-            if(event.code === 'Space') {
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' && !isJumping) {
+                isJumping = true;
+                jumpHeight = 0;
                 jump();
             }
-            if(event.code === 'ArrowUp') {
-                collectPowerUp();
-            }
-            if(event.code === 'ArrowRight') {
-                player.x += 5;
-            }
-            if(event.code === 'ArrowLeft') {
-                player.x -= 5;
-            }
-            defeatBoss();
         });
 
-        update();
+        function jump() {
+            if (isJumping) {
+                if (jumpHeight < 100) {
+                    jumpHeight += 5;
+                    characterPosition += 5;
+                    character.style.bottom = `${characterPosition}px`;
+                    requestAnimationFrame(jump);
+                } else {
+                    isJumping = false;
+                    fall();
+                }
+            }
+        }
+
+        function fall() {
+            if (characterPosition > 100) {
+                characterPosition -= gravity;
+                character.style.bottom = `${characterPosition}px`;
+                requestAnimationFrame(fall);
+            } else {
+                characterPosition = 100;
+                character.style.bottom = `${characterPosition}px`;
+            }
+        }
     </script>
 </body>
+
 </html>
 ```
-
