@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "PL Custom Cursor",
+  "version": "1.0",
+  "description": "Custom cursor by PL",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
